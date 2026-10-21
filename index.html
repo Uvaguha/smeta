@@ -20,7 +20,7 @@ h1{font-size:28px;margin:18px 0 2px}
 .bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .3s}
 .bar i.over{background:var(--warn)}
 label{display:block;font-size:14px;color:var(--mute);margin:14px 0 6px}
-input{width:100%;font:inherit;font-size:18px;padding:14px;border-radius:14px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+input,select{width:100%;font:inherit;font-size:18px;padding:14px;border-radius:14px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
 .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .seg button,.tabs button{padding:14px 6px;border-radius:14px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;font-size:16px;cursor:pointer}
 .seg button.on,.tabs button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
@@ -60,20 +60,21 @@ input{width:100%;font:inherit;font-size:18px;padding:14px;border-radius:14px;bor
     </div>
     <div class="bar"><i id="fill"></i></div>
     <div class="muted" style="margin-top:8px">Лимит 1 500 000 ₽ · <span id="pct">0%</span></div>
+    <div class="muted" style="margin-top:6px" id="forecast"></div>
   </div>
 
   <div class="card">
     <label for="amount">Сумма, ₽</label>
     <input id="amount" inputmode="decimal" placeholder="0" autocomplete="off">
+    <label for="date">Дата</label>
+    <input id="date" type="date">
     <label>Раздел</label>
     <div class="seg" id="cats">
       <button data-c="work" class="on">Работы</button>
       <button data-c="material">Материалы</button>
       <button data-c="furniture">Мебель</button>
     </div>
-    <label for="date">Дата</label>
-<input id="date" type="date">
-<label for="title">Вид работ / что купили</label>
+    <label for="title">Вид работ / что купили</label>
     <input id="title" list="titles" placeholder="например, плитка в ванной" maxlength="80" autocomplete="off">
     <datalist id="titles"></datalist>
     <label for="who">Исполнитель / магазин</label>
@@ -83,13 +84,31 @@ input{width:100%;font:inherit;font-size:18px;padding:14px;border-radius:14px;bor
     <div class="status" id="status"></div>
   </div>
 
+  <div class="card">
+    <div class="v" style="font-size:20px">Планы</div>
+    <div class="muted">Что ещё нужно купить или сделать. Прогноз считается с учётом планов.</div>
+    <label for="pTitle">Что запланировать</label>
+    <input id="pTitle" maxlength="80" placeholder="например, унитаз" autocomplete="off">
+    <label for="pAmount">Примерная сумма, ₽</label>
+    <input id="pAmount" inputmode="decimal" placeholder="0" autocomplete="off">
+    <label for="pCat">Раздел</label>
+    <select id="pCat">
+      <option value="work">Работы</option>
+      <option value="material">Материалы</option>
+      <option value="furniture">Мебель</option>
+    </select>
+    <button class="btn" id="pAdd">Добавить в план</button>
+    <div class="status" id="pStatus"></div>
+    <div id="plist" style="margin-top:8px"></div>
+  </div>
+
   <div class="tabs" id="filters">
     <button data-f="all" class="on">Все</button>
     <button data-f="work">Работы</button>
     <button data-f="material">Материалы</button>
     <button data-f="furniture">Мебель</button>
   </div>
-    <div class="card" id="list"></div>
+  <div class="card" id="list"></div>
   <button class="btn" id="export">Скачать отчёт для Excel</button>
 
   <div class="card">
@@ -115,16 +134,18 @@ const ALLOWED = ['kholopovys@gmail.com', 'foto-xo@mail.ru'];
 
 const LIMIT = 1500000;
 const CATS = {work:'Работы', material:'Материалы', furniture:'Мебель'};
-let cat = 'work', filter = 'all', items = [], me = null, unsub = null;
+let cat = 'work', filter = 'all', items = [], plans = [], me = null, unsub = null, unsubPlans = null;
 const $ = id => document.getElementById(id);
 const fmt = n => Math.round(n).toLocaleString('ru-RU') + ' ₽';
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const setStatus = (t, bad) => { $('status').textContent = t; $('status').style.color = bad ? 'var(--warn)' : ''; };
+const setPStatus = (t, bad) => { $('pStatus').textContent = t; $('pStatus').style.color = bad ? 'var(--warn)' : ''; };
+const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
-$('date').value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const store = firebase.firestore();
+$('date').value = today();
 
 function parseAmount(s){
   const n = Number(String(s).replace(/\s|\u00a0/g,'').replace(',', '.'));
@@ -136,6 +157,17 @@ function fillList(id, values){
   values.forEach(v => { const o = document.createElement('option'); o.value = v; dl.appendChild(o); });
 }
 
+function twoTap(btn, action){
+  btn.onclick = () => {
+    if (!btn.classList.contains('sure')) {
+      btn.classList.add('sure'); btn.textContent = 'Удалить?';
+      setTimeout(() => { btn.classList.remove('sure'); btn.textContent = '✕'; }, 3000);
+      return;
+    }
+    action();
+  };
+}
+
 function render(){
   const spent = items.reduce((s, x) => s + (+x.amount || 0), 0);
   const left = LIMIT - spent;
@@ -145,6 +177,11 @@ function render(){
   $('fill').style.width = Math.min(100, spent / LIMIT * 100) + '%';
   $('fill').classList.toggle('over', spent > LIMIT);
   $('pct').textContent = (spent / LIMIT * 100).toFixed(1) + '% израсходовано';
+
+  const planned = plans.reduce((s, x) => s + (+x.amount || 0), 0);
+  const forecast = spent + planned;
+  $('forecast').textContent = 'С планами: ' + fmt(forecast) + ' · останется ' + fmt(LIMIT - forecast);
+  $('forecast').style.color = LIMIT - forecast < 0 ? 'var(--warn)' : '';
 
   fillList('titles', [...new Set(items.map(x => x.title).filter(Boolean))]);
   fillList('whos', [...new Set(items.map(x => x.who).filter(Boolean))]);
@@ -161,14 +198,7 @@ function render(){
     row.appendChild(main);
     row.appendChild(el('div', 'a', fmt(x.amount)));
     const del = el('button', 'del', '✕');
-    del.onclick = () => {
-      if (!del.classList.contains('sure')) {
-        del.classList.add('sure'); del.textContent = 'Удалить?';
-        setTimeout(() => { del.classList.remove('sure'); del.textContent = '✕'; }, 3000);
-        return;
-      }
-      store.collection('expenses').doc(x.id).delete().catch(e => setStatus('Не удалилось: ' + e.message, true));
-    };
+    twoTap(del, () => store.collection('expenses').doc(x.id).delete().catch(e => setStatus('Не удалилось: ' + e.message, true)));
     row.appendChild(del);
     list.appendChild(row);
   });
@@ -179,6 +209,55 @@ function render(){
   const keys = Object.keys(byWho).sort((a, b) => byWho[b] - byWho[a]);
   if (!keys.length) wl.appendChild(el('div', 'muted', 'Появится после первой траты.'));
   keys.forEach(k => { const r = el('div', 'row'); r.appendChild(el('span', '', k)); r.appendChild(el('span', '', fmt(byWho[k]))); wl.appendChild(r); });
+
+  renderPlans();
+}
+
+function renderPlans(){
+  const pl = $('plist'); pl.innerHTML = '';
+  if (!plans.length) pl.appendChild(el('div', 'muted', 'Планов пока нет.'));
+  plans.forEach(p => {
+    const row = el('div', 'item');
+    const main = el('div', 'main');
+    main.appendChild(el('div', 't', p.title));
+    main.appendChild(el('div', 's', [CATS[p.cat], 'запланировал(а) ' + (p.by === me ? 'я' : 'вторая половина')].join(' · ')));
+    row.appendChild(main);
+    row.appendChild(el('div', 'a', fmt(p.amount)));
+    const buy = el('button', 'del', 'Куплено');
+    buy.style.color = 'var(--acc)';
+    buy.onclick = () => buyPlan(p);
+    const del = el('button', 'del', '✕');
+    twoTap(del, () => store.collection('plans').doc(p.id).delete().catch(e => setPStatus('Не удалилось: ' + e.message, true)));
+    row.appendChild(buy);
+    row.appendChild(del);
+    pl.appendChild(row);
+  });
+}
+
+async function addPlan(){
+  const amount = parseAmount($('pAmount').value);
+  const title = $('pTitle').value.trim();
+  if (!amount) return setPStatus('Введите примерную сумму больше нуля', true);
+  if (!title) return setPStatus('Напишите, что запланировать', true);
+  const btn = $('pAdd'); btn.disabled = true;
+  try {
+    await store.collection('plans').add({ cat: $('pCat').value, title, amount, by: me, createdAt: Date.now() });
+    $('pAmount').value = ''; $('pTitle').value = '';
+    setPStatus('Добавлено в план ✓');
+  } catch (e) {
+    setPStatus('Не сохранилось: ' + e.message, true);
+  }
+  btn.disabled = false;
+}
+
+async function buyPlan(p){
+  try {
+    await store.collection('expenses').add({ cat: p.cat, title: p.title, who: '', amount: p.amount, date: today(), by: me, createdAt: Date.now() });
+    await store.collection('plans').doc(p.id).delete();
+    setPStatus('Перенесено в траты ✓');
+  } catch (e) {
+    setPStatus('Не получилось: ' + e.message, true);
+  }
 }
 
 async function add(){
@@ -200,12 +279,62 @@ async function add(){
   btn.disabled = false;
 }
 
+function sumBy(key){
+  const m = {};
+  items.forEach(x => { const k = x[key] || 'Без исполнителя'; m[k] = (m[k] || 0) + (+x.amount || 0); });
+  return m;
+}
+function cell(v){
+  const s = String(v == null ? '' : v);
+  return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function exportCSV(){
+  const num = n => String(Math.round(n * 100) / 100).replace('.', ',');
+  const lines = [];
+  const line = arr => lines.push(arr.map(cell).join(';'));
+  const spent = items.reduce((s, x) => s + (+x.amount || 0), 0);
+  const planned = plans.reduce((s, x) => s + (+x.amount || 0), 0);
+  line(['Дата', 'Раздел', 'Вид работ / что купили', 'Исполнитель / магазин', 'Сумма, ₽', 'Записал']);
+  [...items].sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+    .forEach(x => line([x.date || '', CATS[x.cat] || '', x.title || '', x.who || '', num(+x.amount || 0), x.by === me ? 'я' : 'вторая половина']));
+  lines.push('');
+  line(['Итого потрачено', '', '', '', num(spent)]);
+  line(['Остаток от лимита', '', '', '', num(LIMIT - spent)]);
+  line(['Запланировано (ещё не куплено)', '', '', '', num(planned)]);
+  line(['Прогноз с планами', '', '', '', num(spent + planned)]);
+  lines.push('');
+  line(['По разделам', '', '', '', 'Сумма, ₽']);
+  Object.keys(CATS).forEach(c => {
+    const sum = items.filter(x => x.cat === c).reduce((s, x) => s + (+x.amount || 0), 0);
+    line([CATS[c], '', '', '', num(sum)]);
+  });
+  lines.push('');
+  line(['По исполнителям и магазинам', '', '', '', 'Сумма, ₽']);
+  const w = sumBy('who');
+  Object.keys(w).sort((a, b) => w[b] - w[a]).forEach(k => line([k, '', '', '', num(w[k])]));
+  lines.push('');
+  line(['Планы (ещё не куплено)', '', '', '', 'Сумма, ₽']);
+  plans.forEach(p => line([p.title, CATS[p.cat] || '', '', '', num(+p.amount || 0)]));
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'smeta-' + today() + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 function subscribe(){
   if (unsub) unsub();
+  if (unsubPlans) unsubPlans();
   unsub = store.collection('expenses').orderBy('createdAt', 'desc').limit(1000).onSnapshot(snap => {
     items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     render();
   }, e => setStatus('Нет доступа или связи: ' + e.message, true));
+  unsubPlans = store.collection('plans').orderBy('createdAt', 'desc').limit(500).onSnapshot(snap => {
+    plans = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    render();
+  }, e => setPStatus('Нет доступа к планам: ' + e.message, true));
 }
 
 auth.onAuthStateChanged(user => {
@@ -242,48 +371,13 @@ document.querySelectorAll('#filters button').forEach(b => b.onclick = () => {
   document.querySelectorAll('#filters button').forEach(x => x.classList.toggle('on', x === b));
   render();
 });
-function sumBy(key){
-  const m = {};
-  items.forEach(x => { const k = x[key] || 'Без исполнителя'; m[k] = (m[k] || 0) + (+x.amount || 0); });
-  return m;
-}
-function cell(v){
-  const s = String(v == null ? '' : v);
-  return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-}
-function exportCSV(){
-  const num = n => String(Math.round(n * 100) / 100).replace('.', ',');
-  const lines = [];
-  const line = arr => lines.push(arr.map(cell).join(';'));
-  const spent = items.reduce((s, x) => s + (+x.amount || 0), 0);
-  line(['Дата', 'Раздел', 'Вид работ / что купили', 'Исполнитель / магазин', 'Сумма, ₽', 'Записал']);
-  [...items].sort((a, b) => (a.date || '').localeCompare(b.date || ''))
-    .forEach(x => line([x.date || '', CATS[x.cat] || '', x.title || '', x.who || '', num(+x.amount || 0), x.by === me ? 'я' : 'вторая половина']));
-  lines.push('');
-  line(['Итого потрачено', '', '', '', num(spent), '']);
-  line(['Остаток от лимита', '', '', '', num(LIMIT - spent), '']);
-  lines.push('');
-  line(['По разделам', '', '', '', 'Сумма, ₽']);
-  Object.keys(CATS).forEach(c => {
-    const sum = items.filter(x => x.cat === c).reduce((s, x) => s + (+x.amount || 0), 0);
-    line([CATS[c], '', '', '', num(sum)]);
-  });
-  lines.push('');
-  line(['По исполнителям и магазинам', '', '', '', 'Сумма, ₽']);
-  const w = sumBy('who');
-  Object.keys(w).sort((a, b) => w[b] - w[a]).forEach(k => line([k, '', '', '', num(w[k])]));
-  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'smeta-' + new Date().toISOString().slice(0, 10) + '.csv';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
-$('export').onclick = exportCSV;
 $('add').onclick = add;
+$('pAdd').onclick = addPlan;
+$('export').onclick = exportCSV;
 $('amount').addEventListener('keydown', e => { if (e.key === 'Enter') $('title').focus(); });
 $('title').addEventListener('keydown', e => { if (e.key === 'Enter') add(); });
+$('pTitle').addEventListener('keydown', e => { if (e.key === 'Enter') $('pAmount').focus(); });
+$('pAmount').addEventListener('keydown', e => { if (e.key === 'Enter') addPlan(); });
 </script>
 </body>
 </html>
