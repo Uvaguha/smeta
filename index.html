@@ -71,7 +71,9 @@ input{width:100%;font:inherit;font-size:18px;padding:14px;border-radius:14px;bor
       <button data-c="material">Материалы</button>
       <button data-c="furniture">Мебель</button>
     </div>
-    <label for="title">Вид работ / что купили</label>
+    <label for="date">Дата</label>
+<input id="date" type="date">
+<label for="title">Вид работ / что купили</label>
     <input id="title" list="titles" placeholder="например, плитка в ванной" maxlength="80" autocomplete="off">
     <datalist id="titles"></datalist>
     <label for="who">Исполнитель / магазин</label>
@@ -118,6 +120,7 @@ const fmt = n => Math.round(n).toLocaleString('ru-RU') + ' ₽';
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const setStatus = (t, bad) => { $('status').textContent = t; $('status').style.color = bad ? 'var(--warn)' : ''; };
 
+$('date').value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const store = firebase.firestore();
@@ -153,7 +156,7 @@ function render(){
     const main = el('div', 'main');
     main.appendChild(el('div', 't', x.title));
     const who = x.by === me ? 'записал(а) я' : 'записал(а) вторая половина';
-    main.appendChild(el('div', 's', [CATS[x.cat], x.who, who].filter(Boolean).join(' · ')));
+    main.appendChild(el('div', 's', [x.date, CATS[x.cat], x.who, who].filter(Boolean).join(' · ')));
     row.appendChild(main);
     row.appendChild(el('div', 'a', fmt(x.amount)));
     const del = el('button', 'del', '✕');
@@ -185,7 +188,7 @@ async function add(){
   const btn = $('add'); btn.disabled = true;
   try {
     await store.collection('expenses').add({
-      cat, title, who: $('who').value.trim(), amount, by: me, createdAt: Date.now()
+      cat, title, who: $('who').value.trim(), amount, date: $('date').value, by: me, createdAt: Date.now()
     });
     $('amount').value = ''; $('title').value = '';
     setStatus('Записано ✓');
