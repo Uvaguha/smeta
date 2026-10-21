@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Смета</title>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--ink:#1d1d1f;--mute:#7a7770;--line:#e6e3dc;--acc:#2f6f5e;--warn:#b5462f;color-scheme:light}
+@media (prefers-color-scheme: dark){:root{--bg:#141414;--card:#1e1e1e;--ink:#f2f1ee;--mute:#9a978f;--line:#2e2e2e;--acc:#6fbfa6;--warn:#ef7a5e;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.4 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif}
+body{padding:env(safe-area-inset-top,0px) 16px calc(24px + env(safe-area-inset-bottom,0px));max-width:640px;margin:0 auto}
+h1{font-size:28px;margin:18px 0 2px}
+.muted{color:var(--mute);font-size:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;margin:12px 0}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.l{color:var(--mute);font-size:14px}
+.v{font-size:24px;font-weight:650;margin-top:2px;font-variant-numeric:tabular-nums}
+.bar{height:12px;background:var(--line);border-radius:8px;overflow:hidden;margin-top:14px}
+.bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .3s}
+.bar i.over{background:var(--warn)}
+label{display:block;font-size:14px;color:var(--mute);margin:14px 0 6px}
+input{width:100%;font:inherit;font-size:18px;padding:14px;border-radius:14px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.seg button,.tabs button{padding:14px 6px;border-radius:14px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;font-size:16px;cursor:pointer}
+.seg button.on,.tabs button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.tabs button{padding:10px 4px;font-size:15px}
+.tabs button.on{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.btn{width:100%;padding:18px;border:0;border-radius:16px;background:var(--acc);color:#fff;font:inherit;font-size:19px;font-weight:600;margin-top:18px;cursor:pointer}
+.btn:disabled{opacity:.5}
+.status{font-size:14px;color:var(--mute);text-align:center;margin-top:10px;min-height:20px}
+.item{display:flex;gap:12px;align-items:center;padding:14px 0;border-top:1px solid var(--line)}
+.item:first-of-type{border-top:0}
+.main{flex:1;min-width:0}
+.t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.s{color:var(--mute);font-size:14px}
+.a{font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+.del{border:0;background:none;color:var(--mute);font:inherit;font-size:15px;padding:10px 6px;cursor:pointer;min-width:44px}
+.del.sure{color:var(--warn);font-weight:600}
+.row{display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
+.row:first-of-type{border-top:0}
+</style>
+</head>
+<body>
+<h1>Смета</h1>
+<div class="muted">Ремонт квартиры · одна общая на двоих</div>
+
+<div id="login" class="card" style="display:none;text-align:center">
+  <p>Войдите через Google, чтобы открыть смету.</p>
+  <button class="btn" id="signin">Войти через Google</button>
+  <div class="status" id="loginStatus"></div>
+</div>
+
+<div id="app" style="display:none">
+  <div class="card">
+    <div class="stats">
+      <div><div class="l">Потрачено</div><div class="v" id="spent">0 ₽</div></div>
+      <div><div class="l">Остаток</div><div class="v" id="left">1 500 000 ₽</div></div>
+    </div>
+    <div class="bar"><i id="fill"></i></div>
+    <div class="muted" style="margin-top:8px">Лимит 1 500 000 ₽ · <span id="pct">0%</span></div>
+  </div>
+
+  <div class="card">
+    <label for="amount">Сумма, ₽</label>
+    <input id="amount" inputmode="decimal" placeholder="0" autocomplete="off">
+    <label>Раздел</label>
+    <div class="seg" id="cats">
+      <button data-c="work" class="on">Работы</button>
+      <button data-c="material">Материалы</button>
+      <button data-c="furniture">Мебель</button>
+    </div>
+    <label for="title">Вид работ / что купили</label>
+    <input id="title" list="titles" placeholder="например, плитка в ванной" maxlength="80" autocomplete="off">
+    <datalist id="titles"></datalist>
+    <label for="who">Исполнитель / магазин</label>
+    <input id="who" list="whos" placeholder="необязательно" maxlength="60" autocomplete="off">
+    <datalist id="whos"></datalist>
+    <button class="btn" id="add">Записать трату</button>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="tabs" id="filters">
+    <button data-f="all" class="on">Все</button>
+    <button data-f="work">Работы</button>
+    <button data-f="material">Материалы</button>
+    <button data-f="furniture">Мебель</button>
+  </div>
+  <div class="card" id="list"></div>
+
+  <div class="card">
+    <div class="l" style="margin-bottom:6px">По исполнителям и магазинам</div>
+    <div id="whoList"></div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyDD1v2w4OAnQTFP5J9aEaeN1Yb28SnQ1lQ",
+  authDomain: "budget-ce9a2.firebaseapp.com",
+  projectId: "budget-ce9a2",
+  storageBucket: "budget-ce9a2.firebasestorage.app",
+  messagingSenderId: "810754067081",
+  appId: "1:810754067081:web:9a7a1464c1aea5ed1d9458",
+  measurementId: "G-MTM5F6V2VE"
+};
+const ALLOWED = ['kholopovys@gmail.com', 'foto-do@mail.ru'];
+
+const LIMIT = 1500000;
+const CATS = {work:'Работы', material:'Материалы', furniture:'Мебель'};
+let cat = 'work', filter = 'all', items = [], me = null, unsub = null;
+const $ = id => document.getElementById(id);
+const fmt = n => Math.round(n).toLocaleString('ru-RU') + ' ₽';
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const setStatus = (t, bad) => { $('status').textContent = t; $('status').style.color = bad ? 'var(--warn)' : ''; };
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const store = firebase.firestore();
+
+function parseAmount(s){
+  const n = Number(String(s).replace(/\s|\u00a0/g,'').replace(',', '.'));
+  return isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : NaN;
+}
+
+function fillList(id, values){
+  const dl = $(id); dl.innerHTML = '';
+  values.forEach(v => { const o = document.createElement('option'); o.value = v; dl.appendChild(o); });
+}
+
+function render(){
+  const spent = items.reduce((s, x) => s + (+x.amount || 0), 0);
+  const left = LIMIT - spent;
+  $('spent').textContent = fmt(spent);
+  $('left').textContent = fmt(left);
+  $('left').style.color = left < 0 ? 'var(--warn)' : '';
+  $('fill').style.width = Math.min(100, spent / LIMIT * 100) + '%';
+  $('fill').classList.toggle('over', spent > LIMIT);
+  $('pct').textContent = (spent / LIMIT * 100).toFixed(1) + '% израсходовано';
+
+  fillList('titles', [...new Set(items.map(x => x.title).filter(Boolean))]);
+  fillList('whos', [...new Set(items.map(x => x.who).filter(Boolean))]);
+
+  const list = $('list'); list.innerHTML = '';
+  const shown = items.filter(x => filter === 'all' || x.cat === filter);
+  if (!shown.length) list.appendChild(el('div', 'muted', 'Пока ни одной траты. Запишите первую выше.'));
+  shown.forEach(x => {
+    const row = el('div', 'item');
+    const main = el('div', 'main');
+    main.appendChild(el('div', 't', x.title));
+    const who = x.by === me ? 'записал(а) я' : 'записал(а) вторая половина';
+    main.appendChild(el('div', 's', [CATS[x.cat], x.who, who].filter(Boolean).join(' · ')));
+    row.appendChild(main);
+    row.appendChild(el('div', 'a', fmt(x.amount)));
+    const del = el('button', 'del', '✕');
+    del.onclick = () => {
+      if (!del.classList.contains('sure')) {
+        del.classList.add('sure'); del.textContent = 'Удалить?';
+        setTimeout(() => { del.classList.remove('sure'); del.textContent = '✕'; }, 3000);
+        return;
+      }
+      store.collection('expenses').doc(x.id).delete().catch(e => setStatus('Не удалилось: ' + e.message, true));
+    };
+    row.appendChild(del);
+    list.appendChild(row);
+  });
+
+  const byWho = {};
+  items.forEach(x => { const k = x.who || 'Без исполнителя'; byWho[k] = (byWho[k] || 0) + (+x.amount || 0); });
+  const wl = $('whoList'); wl.innerHTML = '';
+  const keys = Object.keys(byWho).sort((a, b) => byWho[b] - byWho[a]);
+  if (!keys.length) wl.appendChild(el('div', 'muted', 'Появится после первой траты.'));
+  keys.forEach(k => { const r = el('div', 'row'); r.appendChild(el('span', '', k)); r.appendChild(el('span', '', fmt(byWho[k]))); wl.appendChild(r); });
+}
+
+async function add(){
+  const amount = parseAmount($('amount').value);
+  const title = $('title').value.trim();
+  if (!amount) return setStatus('Введите сумму больше нуля', true);
+  if (!title) return setStatus('Напишите, что за работа или покупка', true);
+  const btn = $('add'); btn.disabled = true;
+  try {
+    await store.collection('expenses').add({
+      cat, title, who: $('who').value.trim(), amount, by: me, createdAt: Date.now()
+    });
+    $('amount').value = ''; $('title').value = '';
+    setStatus('Записано ✓');
+    $('amount').focus();
+  } catch (e) {
+    setStatus('Не сохранилось: ' + e.message, true);
+  }
+  btn.disabled = false;
+}
+
+function subscribe(){
+  if (unsub) unsub();
+  unsub = store.collection('expenses').orderBy('createdAt', 'desc').limit(1000).onSnapshot(snap => {
+    items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    render();
+  }, e => setStatus('Нет доступа или связи: ' + e.message, true));
+}
+
+auth.onAuthStateChanged(user => {
+  if (!user) {
+    $('app').style.display = 'none';
+    $('login').style.display = '';
+    return;
+  }
+  if (!ALLOWED.includes(user.email)) {
+    auth.signOut();
+    $('login').style.display = '';
+    $('loginStatus').textContent = 'Этот аккаунт не в списке доступа.';
+    return;
+  }
+  me = user.email;
+  $('login').style.display = 'none';
+  $('app').style.display = '';
+  subscribe();
+});
+
+$('signin').onclick = () => {
+  $('loginStatus').textContent = '';
+  auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e => {
+    $('loginStatus').textContent = 'Не вышло войти: ' + e.message;
+  });
+};
+
+document.querySelectorAll('#cats button').forEach(b => b.onclick = () => {
+  cat = b.dataset.c;
+  document.querySelectorAll('#cats button').forEach(x => x.classList.toggle('on', x === b));
+});
+document.querySelectorAll('#filters button').forEach(b => b.onclick = () => {
+  filter = b.dataset.f;
+  document.querySelectorAll('#filters button').forEach(x => x.classList.toggle('on', x === b));
+  render();
+});
+$('add').onclick = add;
+$('amount').addEventListener('keydown', e => { if (e.key === 'Enter') $('title').focus(); });
+$('title').addEventListener('keydown', e => { if (e.key === 'Enter') add(); });
+</script>
+</body>
+</html>
