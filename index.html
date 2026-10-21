@@ -89,7 +89,8 @@ input{width:100%;font:inherit;font-size:18px;padding:14px;border-radius:14px;bor
     <button data-f="material">Материалы</button>
     <button data-f="furniture">Мебель</button>
   </div>
-  <div class="card" id="list"></div>
+    <div class="card" id="list"></div>
+  <button class="btn" id="export">Скачать отчёт для Excel</button>
 
   <div class="card">
     <div class="l" style="margin-bottom:6px">По исполнителям и магазинам</div>
@@ -241,6 +242,45 @@ document.querySelectorAll('#filters button').forEach(b => b.onclick = () => {
   document.querySelectorAll('#filters button').forEach(x => x.classList.toggle('on', x === b));
   render();
 });
+function sumBy(key){
+  const m = {};
+  items.forEach(x => { const k = x[key] || 'Без исполнителя'; m[k] = (m[k] || 0) + (+x.amount || 0); });
+  return m;
+}
+function cell(v){
+  const s = String(v == null ? '' : v);
+  return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function exportCSV(){
+  const num = n => String(Math.round(n * 100) / 100).replace('.', ',');
+  const lines = [];
+  const line = arr => lines.push(arr.map(cell).join(';'));
+  const spent = items.reduce((s, x) => s + (+x.amount || 0), 0);
+  line(['Дата', 'Раздел', 'Вид работ / что купили', 'Исполнитель / магазин', 'Сумма, ₽', 'Записал']);
+  [...items].sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+    .forEach(x => line([x.date || '', CATS[x.cat] || '', x.title || '', x.who || '', num(+x.amount || 0), x.by === me ? 'я' : 'вторая половина']));
+  lines.push('');
+  line(['Итого потрачено', '', '', '', num(spent), '']);
+  line(['Остаток от лимита', '', '', '', num(LIMIT - spent), '']);
+  lines.push('');
+  line(['По разделам', '', '', '', 'Сумма, ₽']);
+  Object.keys(CATS).forEach(c => {
+    const sum = items.filter(x => x.cat === c).reduce((s, x) => s + (+x.amount || 0), 0);
+    line([CATS[c], '', '', '', num(sum)]);
+  });
+  lines.push('');
+  line(['По исполнителям и магазинам', '', '', '', 'Сумма, ₽']);
+  const w = sumBy('who');
+  Object.keys(w).sort((a, b) => w[b] - w[a]).forEach(k => line([k, '', '', '', num(w[k])]));
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'smeta-' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+$('export').onclick = exportCSV;
 $('add').onclick = add;
 $('amount').addEventListener('keydown', e => { if (e.key === 'Enter') $('title').focus(); });
 $('title').addEventListener('keydown', e => { if (e.key === 'Enter') add(); });
